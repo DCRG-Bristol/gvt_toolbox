@@ -1,10 +1,15 @@
-function postProc_V2
-
-clear all;
+function postProc_V2(filepath)
+arguments
+    filepath = ''
+end
 close all;
 clc;
-
-[file,path] = uigetfile('*.mat'); file = open(file);
+if isfile(filepath)
+    file = open(filepath);
+else
+    [file,path] = uigetfile('*.mat'); 
+    file = open(fullfile(path,file));
+end
 Data = file.Data;
 expr = file.expr;
 

@@ -1,7 +1,4 @@
-function daqTool(argin)
-
-%% pre-determined tap positions.....
-
+%% define geometry
 %tapping locations...
 tapLcn = [...
     %X, Y, Z
@@ -40,6 +37,7 @@ tapDir = [...
     0, 1, 0;...
     0, -1, 0];
 
+%% setup parameter object
 globObj = gvt.daq.Params(tapLcn,tapLcn_ID,tapDir);
 
 globObj.SampleRate = 2000; %[Hz]
@@ -56,5 +54,5 @@ globObj.Trig = gvt.daq.Trig("Hammer");
 globObj.Trig.Threshold = 0.002; %threshold exceed condition
 globObj.Trig.Buffer = 0.1; %collection initialised at t=trigger time - buffer
 
-% set Up UI
+%% Run the GVT GUI
 globObj.StartUI();
