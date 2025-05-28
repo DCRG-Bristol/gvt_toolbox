@@ -1,26 +1,23 @@
-function postProc_V2(filepath)
-arguments
-    filepath = ''
-end
+function postProc_V2
+
+clear all;
 close all;
 clc;
-if isfile(filepath)
-    file = open(filepath);
-else
-    [file,path] = uigetfile('*.mat'); 
-    file = open(fullfile(path,file));
-end
+
+addpath('POLYCAL')
+
+[file,path] = uigetfile('*.mat'); file = open(file);
 Data = file.Data;
 expr = file.expr;
 
 globObj.recType = 'All';
-globObj.noMode = 5;
-globObj.FR = [1,75];
-globObj.decifac = 1;
+globObj.noMode = 50;
+globObj.FR = [2.5,100];
+globObj.decifac = 2;
 globObj.windowWidth = 0.005;
-globObj.stabDiagRange = [1, 75];
+globObj.stabDiagRange = [2.5, 100];
 globObj.fftMeth = 'rawFFT'; %'modalfrf'
-globObj.Tspan = 7.5;
+globObj.Tspan = 25;
 
 tapLcn = expr.tapLcn;
 globObj.tapDir = expr.tapDir;
@@ -80,7 +77,7 @@ hold(globObj.uiFig.axes{1}.ax, 'on');
 tapDir = globObj.tapDir;
 for pos=1:length(Data)
 
-    disp = 0.5*globObj.refDim*tapDir(pos,:)';
+    disp = 0.6*0.5*globObj.refDim*tapDir(pos,:)';
     dx = globObj.NomShp_rep.X(pos)+[0,disp(1)];
     dy = globObj.NomShp_rep.Y(pos)+[0,disp(2)];
     dz = globObj.NomShp_rep.Z(pos)+[0,disp(3)];
@@ -90,7 +87,7 @@ for pos=1:length(Data)
     hold(globObj.uiFig.axes{1}.ax, 'on');
 
     text(globObj.uiFig.axes{1}.ax, dx(2), dy(2), dz(2),...
-        globObj.Id{pos}, 'fontweight', 'bold', 'FontSize',10);
+        globObj.Id{pos}, 'fontweight', 'bold', 'FontSize',13);
 
     globObj.uiFig.axes{1}.ax.DataAspectRatio = [1, 1, 1];
 
@@ -199,6 +196,7 @@ selIdx = globObj.userSel{pos};
 FRF = globObj.modalInfo.avFRF;
 avFrq = globObj.modalInfo.avFRQ;
 recon = globObj.modalInfo.fitFRF;
+fitfrqMesh = globObj.modalInfo.frqMesh;
 
 for rep=1:length(tempinpt(1,:))
 
@@ -242,7 +240,7 @@ end
 
 subplot(1,2,1)
 plot(avFrq, abs(FRF(:,1,pos)),'k-','lineWidth', 1.5); hold on;
-plot(avFrq, abs(recon(:,1,pos)),'r-','lineWidth', 1.5); hold on;
+plot(fitfrqMesh, abs(recon(:,1,pos)),'r-','lineWidth', 1.5); hold on;
 leg{1,rep+1} = 'Average';
 leg{1,rep+2} = 'Fitted Model';
 set(gca, 'yscale', 'log');
@@ -309,38 +307,70 @@ globObj.modalInfo.avFRF = FrF;
 globObj.modalInfo.avFRQ = Frq;
 set(globObj.uiFig.fig, 'UserData', globObj);
 
-[modFrq, modDamp, modShp, recon] =...
-    modalfit(FrF,Frq,Fs,globObj.noMode,'FitMethod','lsce','FreqRange',globObj.FR);
+[fvec1, FRF1] = select_frf(Frq(2:end), FrF(2:end,:,:), globObj.FR);
+[fn,dr,Pfrf]=polymax_frf(FRF1,fvec1,globObj.noMode);
+order_rang = [max([globObj.noMode-30,10]), max([20,globObj.noMode])];
+%use an averaged FRF...
+Ftot = FRF1(:,1,1);
+[fn1,dr1,FST,stabDiag]=stabe_poles(fvec1,Ftot,order_rang);
 
-globObj.modalInfo.frq = modFrq;
-globObj.modalInfo.damp = modDamp;
-globObj.modalInfo.shp = modShp;
-globObj.modalInfo.fitFRF = recon;
-set(globObj.uiFig.fig, 'UserData', globObj);
+if isfield(globObj.modalInfo, 'frq')
+
+    answer = questdlg('Update fitting?','Fitted poles already exists!',...
+        {'yes', 'no'});
+
+    switch answer
+
+        case 'Yes'
+            [modFrq, modDamp] = manual_select_stabchart(FST,FRF1,order_rang);
+            [modShp_org, recon] = lsfd(fvec1*2*pi, Pfrf, modFrq, modDamp) ;
+
+            for mode=1:length(modShp_org(:,1,1))
+                modShp(:,mode) = modShp_org(mode,1,:);
+            end
+
+            globObj.modalInfo.frq = modFrq;
+            globObj.modalInfo.damp = modDamp;
+            globObj.modalInfo.shp = modShp;
+            globObj.modalInfo.fitFRF = recon;
+            globObj.modalInfo.frqMesh = fvec1;
+            set(globObj.uiFig.fig, 'UserData', globObj);
+
+        case 'no'
+
+    end
+
+else
+    [modFrq, modDamp] = manual_select_stabchart(FST,FRF1,order_rang);
+    [modShp_org, recon] = lsfd(fvec1*2*pi, Pfrf, modFrq, modDamp) ;
+
+    for mode=1:length(modShp_org(:,1,1))
+        modShp(:,mode) = modShp_org(mode,1,:);
+    end
+
+    globObj.modalInfo.frq = modFrq;
+    globObj.modalInfo.damp = modDamp;
+    globObj.modalInfo.shp = modShp;
+    globObj.modalInfo.fitFRF = recon;
+    globObj.modalInfo.frqMesh = fvec1;
+    set(globObj.uiFig.fig, 'UserData', globObj);
+
+end
+
 
 if idFlag
-
-    stabDiag = figure;
-    modalsd(FrF,Frq,Fs, 'FreqRange',globObj.stabDiagRange,...
-        'FitMethod','lsce'); %stabalisation diagram
     aa = gca; set(aa.Legend,'AutoUpdate', 'off');
-
     hold on;
-    validRecFrqs = modFrq; validRecFrqs(isnan(validRecFrqs))=0;
+    validRecFrqs = globObj.modalInfo.frq;
+    validRecFrqs(isnan(validRecFrqs))=0;
     recObj = xline(validRecFrqs, 'k-', 'lineWidth',2);
     title('Stabalisation diagram: Click on a line to display mode')
-
-    %ident clickable pts as object
-%     ob_allstab = findobj(stabDiag,'Marker','+'); ob_fstab = findobj(stabDiag,'Marker','o');
-
-    %set button function for mode visualisation
-%     set(ob_allstab, 'buttondownFcn', @(in1,in2)(showMode(in1,in2,globObj)));
-%     set(ob_fstab, 'buttondownFcn', @(in1,in2)(showMode(in1,in2,globObj)));
     set(recObj, 'buttondownFcn', @(in1,in2)(showMode(in1,in2,globObj)));
 
     close(f);
 else
-    close(f);
+    close(f)
+    close(stabDiag);
 end
 
 %%
@@ -358,12 +388,10 @@ filDT = globObj.windowWidth;
 
 for rpt=1:length(dBlock)
     idx = rpt; %selIdx(rpt);
-    tempT = dBlock{idx}.T(1:deciFac:end);
+    [~,t_idx] = min(abs(Tspan-(dBlock{idx}.T-dBlock{idx}.T(1))));
+    tempT = dBlock{idx}.T(1:deciFac:t_idx);
     tempT = tempT-tempT(1);
-
-    [~,t_idx] = min(abs(Tspan-tempT));
-    tempT = tempT(1:t_idx);
-        Fs = 1./(tempT(2)-tempT(1));
+    Fs = 1./(tempT(2)-tempT(1));
         
     tempinpt(:,rpt) = dBlock{idx}.Y(1:deciFac:t_idx,1);
     [~,cutIdx] = min(abs(tempT-(tempT(end)-2)));
